@@ -49,14 +49,15 @@ exports.handler = async (event) => {
       await response.arrayBuffer()
     );
 
-    return {
-      statusCode: 200,
-      headers: {
-        "Content-Type": response.headers.get("content-type") || "image/jpeg"
-      },
-      body: image.toString("base64"),
-      isBase64Encoded: true
-    };
+   return {
+  statusCode: 200,
+  headers: {
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    image: `data:${response.headers.get("content-type") || "image/jpeg"};base64,${image.toString("base64")}`
+  })
+};
   } catch (error) {
     return {
       statusCode: 500,
