@@ -4,12 +4,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Visual Guard 0.2</title>
+<title>Visual Guard 0.3</title>
 <style>
 *{box-sizing:border-box}
 body{margin:0;background:#f7f7fb;color:#191625;font:16px Arial,sans-serif}
 main{max-width:850px;margin:auto;padding:24px 16px 70px}
-h1{font-size:32px;margin-bottom:8px}
+h1{font-size:32px}
 p{line-height:1.5;color:#696477}
 .card{background:white;border:1px solid #e8e4ef;border-radius:20px;padding:20px;margin:18px 0}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:15px}
@@ -21,7 +21,9 @@ button:disabled{opacity:.5}
 canvas{width:100%;border-radius:12px}
 .hidden{display:none}
 .tag{color:#7651dd;font-weight:bold}
-.report{background:#f3efff;border-radius:12px;padding:15px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6}
+.report{background:#f3efff;border-radius:12px;padding:15px;overflow-wrap:anywhere;line-height:1.6}
+.report h3{margin:15px 0 5px}
+.report p{margin:4px 0}
 a{color:#7651dd}
 @media(max-width:550px){.grid{grid-template-columns:1fr}}
 </style>
@@ -29,9 +31,9 @@ a{color:#7651dd}
 <body>
 <main>
 <a href="/">← AI Creative Studio</a>
-<p class="tag">VISUAL GUARD · VERSION 0.2</p>
+<p class="tag">VISUAL GUARD · VERSION 0.3</p>
 <h1>AI Visual Quality Check</h1>
-<p>Сравнение изображений и распознавание текста на товарах.</p>
+<p>Проверка изображений и поиск изменений в надписях.</p>
 
 <div class="card">
 <div class="grid">
@@ -46,7 +48,6 @@ a{color:#7651dd}
 <img id="preview2" class="hidden" alt="Рекламный кадр">
 </div>
 </div>
-
 <button id="compare" disabled>Сравнить изображения</button>
 <button id="checkText" disabled>Проверить текст</button>
 <p id="status" role="status">Загрузите две фотографии.</p>
@@ -61,9 +62,10 @@ a{color:#7651dd}
 </div>
 
 <div id="textResults" class="card hidden">
-<h2>Отчёт о надписях</h2>
+<h2>AI Text Report</h2>
 <div id="textReport" class="report"></div>
-<p>Распознавание текста может ошибаться. Проверяйте результаты вручную.</p>
+<p>Распознавание текста может ошибаться. Результат требует проверки человеком.</p>
+<button id="downloadText">Скачать текстовый отчёт</button>
 </div>
 </main>
 
@@ -74,6 +76,7 @@ const checkText=document.getElementById("checkText");
 const status=document.getElementById("status");
 const results=document.getElementById("results");
 const textResults=document.getElementById("textResults");
+let textReportContent="";
 
 async function loadImage(inputId,previewId){
  const input=document.getElementById(inputId);
@@ -99,11 +102,9 @@ async function loadImage(inputId,previewId){
   const image=new Image();
   image.src=url;
   await image.decode();
-
   files[inputId]=image;
   preview.src=url;
   preview.classList.remove("hidden");
-
   const ready=!!(files.original&&files.advert);
   compare.disabled=!ready;
   checkText.disabled=!ready;
@@ -115,20 +116,16 @@ async function loadImage(inputId,previewId){
 
 document.getElementById("original").onchange=
  ()=>loadImage("original","preview1");
-
 document.getElementById("advert").onchange=
  ()=>loadImage("advert","preview2");
 
 compare.onclick=function(){
  if(!files.original||!files.advert)return;
-
  try{
   const first=files.original;
   const second=files.advert;
   const width=Math.min(600,first.naturalWidth);
-  const height=Math.max(1,Math.round(
-   width*first.naturalHeight/first.naturalWidth
-  ));
+  const height=Math.max(1,Math.round(width*first.naturalHeight/first.naturalWidth));
 
   function pixels(image){
    const c=document.createElement("canvas");
@@ -149,15 +146,11 @@ compare.onclick=function(){
   let changed=0;
 
   for(let i=0;i<a.length;i+=4){
-   const delta=(
-    Math.abs(a[i]-b[i])+
+   const delta=(Math.abs(a[i]-b[i])+
     Math.abs(a[i+1]-b[i+1])+
-    Math.abs(a[i+2]-b[i+2])
-   )/3;
-
+    Math.abs(a[i+2]-b[i+2]))/3;
    const different=delta>28;
    if(different)changed++;
-
    output.data[i]=235;
    output.data[i+1]=different?48:235;
    output.data[i+2]=different?82:235;
@@ -165,11 +158,9 @@ compare.onclick=function(){
   }
 
   ctx.putImageData(output,0,0);
-
   const percent=(changed/(width*height)*100).toFixed(1);
   document.getElementById("summary").textContent=
    "Различается примерно "+percent+"% пикселей.";
-
   results.classList.remove("hidden");
   status.textContent="Сравнение завершено.";
  }catch(e){
@@ -185,7 +176,6 @@ document.getElementById("download").onclick=function(){
 };
 
 let ocrPromise=null;
-
 async function getOCR(){
  if(!ocrPromise){
   ocrPromise=import(
@@ -201,46 +191,87 @@ async function getOCR(){
  return ocrPromise;
 }
 
+function extractWords(text){
+ const matches=text.toUpperCase().match(/[A-Z]{3,}/g)||[];
+ return [...new Set(matches)];
+}
+
+function compareWords(original,advert){
+ const a=extractWords(original);
+ const b=extractWords(advert);
+ const originalSet=new Set(a);
+ const advertSet=new Set(b);
+ return {
+  same:a.filter(word=>advertSet.has(word)),
+  missing:a.filter(word=>!advertSet.has(word)),
+  added:b.filter(word=>!originalSet.has(word))
+ };
+}
+
+function displayWords(words){
+ return words.length?words.join(", "):"Не обнаружено";
+}
+
 checkText.onclick=async function(){
  if(!files.original||!files.advert)return;
-
  checkText.disabled=true;
- status.textContent="Загружаем модель распознавания. Это может занять время.";
+ status.textContent="Загружаем модель распознавания...";
 
  try{
   const worker=await getOCR();
-  status.textContent="Читаем надписи на оригинале...";
+  status.textContent="Читаем оригинал...";
   const first=await worker.recognize(files.original.src);
-
-  status.textContent="Читаем надписи на рекламном кадре...";
+  status.textContent="Читаем рекламный кадр...";
   const second=await worker.recognize(files.advert.src);
 
-  const a=first.data.text.trim();
-  const b=second.data.text.trim();
-
-  const normalize=s=>s.toLowerCase().replace(/\s+/g," ").trim();
-  const same=normalize(a)===normalize(b);
+  const original=first.data.text.trim();
+  const advert=second.data.text.trim();
+  const words=compareWords(original,advert);
 
   const report=document.getElementById("textReport");
+  report.replaceChildren();
 
-  report.textContent=
-   "ОРИГИНАЛ:\n"+(a||"Текст не обнаружен")+
-   "\n\nРЕКЛАМНЫЙ КАДР:\n"+(b||"Текст не обнаружен")+
-   "\n\nРЕЗУЛЬТАТ:\n"+
-   (!a&&!b
-    ?"Текст не обнаружен на обоих изображениях."
-    :same
-     ?"Распознанные надписи совпадают."
-     :"Обнаружены различия в распознанном тексте.");
+  function section(title,content){
+   const h=document.createElement("h3");
+   h.textContent=title;
+   const p=document.createElement("p");
+   p.textContent=content;
+   report.append(h,p);
+  }
+
+  section("Совпадающие слова",displayWords(words.same));
+  section("Возможные исчезнувшие слова",displayWords(words.missing));
+  section("Возможные новые слова",displayWords(words.added));
+  section("Оригинал — распознанный текст",original||"Текст не обнаружен");
+  section("Рекламный кадр — распознанный текст",advert||"Текст не обнаружен");
+
+  textReportContent=
+   "VISUAL GUARD 0.3\n\n"+
+   "Совпадающие слова:\n"+displayWords(words.same)+
+   "\n\nВозможные исчезнувшие слова:\n"+displayWords(words.missing)+
+   "\n\nВозможные новые слова:\n"+displayWords(words.added)+
+   "\n\nОригинал:\n"+original+
+   "\n\nРекламный кадр:\n"+advert+
+   "\n\nРезультаты предварительные. Возможны ошибки OCR.";
 
   textResults.classList.remove("hidden");
   status.textContent="Проверка текста завершена.";
  }catch(e){
-  status.textContent=
-   "Не удалось запустить распознавание. Проверьте интернет и попробуйте снова.";
+  status.textContent="Ошибка распознавания. Проверьте интернет и попробуйте снова.";
  }finally{
   checkText.disabled=false;
  }
+};
+
+document.getElementById("downloadText").onclick=function(){
+ if(!textReportContent)return;
+ const blob=new Blob([textReportContent],{type:"text/plain;charset=utf-8"});
+ const url=URL.createObjectURL(blob);
+ const link=document.createElement("a");
+ link.href=url;
+ link.download="visual-guard-report.txt";
+ link.click();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
 };
 </script>
 </body>
