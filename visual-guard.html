@@ -3,24 +3,25 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Visual Guard | AI Creative Studio</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Visual Guard 0.2</title>
 <style>
 *{box-sizing:border-box}
-body{margin:0;background:#f7f7fb;color:#181525;font-family:Arial,sans-serif}
+body{margin:0;background:#f7f7fb;color:#191625;font:16px Arial,sans-serif}
 main{max-width:850px;margin:auto;padding:24px 16px 70px}
 h1{font-size:32px;margin-bottom:8px}
-p{line-height:1.5;color:#666176}
-.card{background:white;border:1px solid #e8e4ef;border-radius:20px;padding:20px;margin:20px 0}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+p{line-height:1.5;color:#696477}
+.card{background:white;border:1px solid #e8e4ef;border-radius:20px;padding:20px;margin:18px 0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:15px}
 label{display:block;font-weight:bold;margin-bottom:10px}
 input{width:100%;margin-bottom:12px}
-img{width:100%;max-height:260px;object-fit:contain;border-radius:12px;background:#f0edf5}
-button{background:#7651dd;color:white;border:0;border-radius:12px;padding:14px 20px;font-size:16px;font-weight:bold;cursor:pointer}
+img{width:100%;max-height:260px;object-fit:contain;border-radius:12px;background:#eee}
+button{background:#7651dd;color:white;border:0;border-radius:12px;padding:13px 17px;font-size:15px;font-weight:bold;margin:5px 5px 5px 0}
 button:disabled{opacity:.5}
 canvas{width:100%;border-radius:12px}
 .hidden{display:none}
 .tag{color:#7651dd;font-weight:bold}
+.report{background:#f3efff;border-radius:12px;padding:15px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6}
 a{color:#7651dd}
 @media(max-width:550px){.grid{grid-template-columns:1fr}}
 </style>
@@ -28,149 +29,218 @@ a{color:#7651dd}
 <body>
 <main>
 <a href="/">← AI Creative Studio</a>
-<p class="tag">VISUAL GUARD · VERSION 0.1</p>
-<h1>Контроль изображений</h1>
-<p>Загрузите оригинал продукта и рекламный кадр. Программа покажет различия между ними.</p>
+<p class="tag">VISUAL GUARD · VERSION 0.2</p>
+<h1>AI Visual Quality Check</h1>
+<p>Сравнение изображений и распознавание текста на товарах.</p>
 
 <div class="card">
 <div class="grid">
 <div>
 <label>1. Оригинал</label>
-<input type="file" id="original" accept="image/*">
+<input type="file" id="original" accept="image/png,image/jpeg,image/webp">
 <img id="preview1" class="hidden" alt="Оригинал">
 </div>
 <div>
 <label>2. Рекламный кадр</label>
-<input type="file" id="advert" accept="image/*">
-<img id="preview2" class="hidden" alt="Реклама">
+<input type="file" id="advert" accept="image/png,image/jpeg,image/webp">
+<img id="preview2" class="hidden" alt="Рекламный кадр">
 </div>
 </div>
-<p>Для точного теста используйте изображения одинакового размера и с одинаковым ракурсом.</p>
+
 <button id="compare" disabled>Сравнить изображения</button>
-<p id="status">Загрузите две фотографии.</p>
+<button id="checkText" disabled>Проверить текст</button>
+<p id="status" role="status">Загрузите две фотографии.</p>
 </div>
 
 <div id="results" class="card hidden">
-<h2>Результат проверки</h2>
+<h2>Карта различий</h2>
 <p id="summary"></p>
 <canvas id="difference"></canvas>
-<p>Красные области показывают различия пикселей. Это пока не интеллектуальная проверка логотипов или костюмов.</p>
+<p>Красные области показывают пиксельные изменения, включая фон, свет и ракурс.</p>
 <button id="download">Скачать результат</button>
+</div>
+
+<div id="textResults" class="card hidden">
+<h2>Отчёт о надписях</h2>
+<div id="textReport" class="report"></div>
+<p>Распознавание текста может ошибаться. Проверяйте результаты вручную.</p>
 </div>
 </main>
 
 <script>
-const files = {};
-const compare = document.getElementById("compare");
-const status = document.getElementById("status");
-const results = document.getElementById("results");
+const files={};
+const compare=document.getElementById("compare");
+const checkText=document.getElementById("checkText");
+const status=document.getElementById("status");
+const results=document.getElementById("results");
+const textResults=document.getElementById("textResults");
 
-async function loadImage(inputId, previewId) {
- const input = document.getElementById(inputId);
- const preview = document.getElementById(previewId);
- const file = input.files[0];
+async function loadImage(inputId,previewId){
+ const input=document.getElementById(inputId);
+ const preview=document.getElementById(previewId);
+ const file=input.files[0];
 
- if (!file) {
-   delete files[inputId];
-   preview.classList.add("hidden");
-   compare.disabled = true;
-   return;
+ delete files[inputId];
+ preview.classList.add("hidden");
+ results.classList.add("hidden");
+ textResults.classList.add("hidden");
+ compare.disabled=true;
+ checkText.disabled=true;
+
+ if(!file)return;
+
+ if(!["image/png","image/jpeg","image/webp"].includes(file.type)){
+  status.textContent="Используйте PNG, JPEG или WebP.";
+  return;
  }
 
- try {
-   const image = new Image();
-   const url = URL.createObjectURL(file);
-   image.src = url;
-   await image.decode();
-   files[inputId] = image;
-   preview.src = url;
-   preview.classList.remove("hidden");
-   compare.disabled = !(files.original && files.advert);
-   status.textContent = compare.disabled
-     ? "Загрузите вторую фотографию."
-     : "Готово к сравнению.";
-   results.classList.add("hidden");
- } catch (error) {
-   status.textContent = "Не удалось открыть изображение.";
+ const url=URL.createObjectURL(file);
+ try{
+  const image=new Image();
+  image.src=url;
+  await image.decode();
+
+  files[inputId]=image;
+  preview.src=url;
+  preview.classList.remove("hidden");
+
+  const ready=!!(files.original&&files.advert);
+  compare.disabled=!ready;
+  checkText.disabled=!ready;
+  status.textContent=ready?"Готово к проверке.":"Загрузите вторую фотографию.";
+ }catch(e){
+  status.textContent="Не удалось открыть изображение.";
  }
 }
 
-document.getElementById("original").onchange =
- () => loadImage("original", "preview1");
+document.getElementById("original").onchange=
+ ()=>loadImage("original","preview1");
 
-document.getElementById("advert").onchange =
- () => loadImage("advert", "preview2");
+document.getElementById("advert").onchange=
+ ()=>loadImage("advert","preview2");
 
-compare.onclick = function() {
- if (!files.original || !files.advert) return;
+compare.onclick=function(){
+ if(!files.original||!files.advert)return;
 
- try {
-   const first = files.original;
-   const second = files.advert;
-   const width = Math.min(600, first.naturalWidth);
-   const height = Math.round(
-     width * first.naturalHeight / first.naturalWidth
-   );
+ try{
+  const first=files.original;
+  const second=files.advert;
+  const width=Math.min(600,first.naturalWidth);
+  const height=Math.max(1,Math.round(
+   width*first.naturalHeight/first.naturalWidth
+  ));
 
-   function getPixels(image) {
-     const canvas = document.createElement("canvas");
-     canvas.width = width;
-     canvas.height = height;
-     const ctx = canvas.getContext("2d");
-     ctx.drawImage(image, 0, 0, width, height);
-     return ctx.getImageData(0, 0, width, height).data;
-   }
+  function pixels(image){
+   const c=document.createElement("canvas");
+   c.width=width;
+   c.height=height;
+   const ctx=c.getContext("2d");
+   ctx.drawImage(image,0,0,width,height);
+   return ctx.getImageData(0,0,width,height).data;
+  }
 
-   const a = getPixels(first);
-   const b = getPixels(second);
+  const a=pixels(first);
+  const b=pixels(second);
+  const canvas=document.getElementById("difference");
+  canvas.width=width;
+  canvas.height=height;
+  const ctx=canvas.getContext("2d");
+  const output=ctx.createImageData(width,height);
+  let changed=0;
 
-   const canvas = document.getElementById("difference");
-   canvas.width = width;
-   canvas.height = height;
+  for(let i=0;i<a.length;i+=4){
+   const delta=(
+    Math.abs(a[i]-b[i])+
+    Math.abs(a[i+1]-b[i+1])+
+    Math.abs(a[i+2]-b[i+2])
+   )/3;
 
-   const ctx = canvas.getContext("2d");
-   const output = ctx.createImageData(width, height);
-   let changed = 0;
+   const different=delta>28;
+   if(different)changed++;
 
-   for (let i = 0; i < a.length; i += 4) {
-     const difference = (
-       Math.abs(a[i] - b[i]) +
-       Math.abs(a[i+1] - b[i+1]) +
-       Math.abs(a[i+2] - b[i+2])
-     ) / 3;
+   output.data[i]=235;
+   output.data[i+1]=different?48:235;
+   output.data[i+2]=different?82:235;
+   output.data[i+3]=255;
+  }
 
-     const isDifferent = difference > 28;
-     if (isDifferent) changed++;
+  ctx.putImageData(output,0,0);
 
-     output.data[i] = isDifferent ? 235 : 235;
-     output.data[i+1] = isDifferent ? 48 : 235;
-     output.data[i+2] = isDifferent ? 82 : 235;
-     output.data[i+3] = 255;
-   }
+  const percent=(changed/(width*height)*100).toFixed(1);
+  document.getElementById("summary").textContent=
+   "Различается примерно "+percent+"% пикселей.";
 
-   ctx.putImageData(output, 0, 0);
-
-   const percent = (
-     changed / (width * height) * 100
-   ).toFixed(1);
-
-   document.getElementById("summary").textContent =
-     "Различается примерно " + percent +
-     "% пикселей. Изменения выделены красным.";
-
-   results.classList.remove("hidden");
-   status.textContent = "Проверка завершена!";
- } catch (error) {
-   status.textContent = "Ошибка сравнения: " + error.message;
+  results.classList.remove("hidden");
+  status.textContent="Сравнение завершено.";
+ }catch(e){
+  status.textContent="Ошибка сравнения: "+e.message;
  }
 };
 
-document.getElementById("download").onclick = function() {
- const canvas = document.getElementById("difference");
- const link = document.createElement("a");
- link.download = "visual-guard-result.png";
- link.href = canvas.toDataURL("image/png");
+document.getElementById("download").onclick=function(){
+ const link=document.createElement("a");
+ link.download="visual-guard-result.png";
+ link.href=document.getElementById("difference").toDataURL("image/png");
  link.click();
+};
+
+let ocrPromise=null;
+
+async function getOCR(){
+ if(!ocrPromise){
+  ocrPromise=import(
+   "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.esm.min.js"
+  ).then(async module=>{
+   const Tesseract=module.default||module;
+   return await Tesseract.createWorker("eng");
+  }).catch(e=>{
+   ocrPromise=null;
+   throw e;
+  });
+ }
+ return ocrPromise;
+}
+
+checkText.onclick=async function(){
+ if(!files.original||!files.advert)return;
+
+ checkText.disabled=true;
+ status.textContent="Загружаем модель распознавания. Это может занять время.";
+
+ try{
+  const worker=await getOCR();
+  status.textContent="Читаем надписи на оригинале...";
+  const first=await worker.recognize(files.original.src);
+
+  status.textContent="Читаем надписи на рекламном кадре...";
+  const second=await worker.recognize(files.advert.src);
+
+  const a=first.data.text.trim();
+  const b=second.data.text.trim();
+
+  const normalize=s=>s.toLowerCase().replace(/\s+/g," ").trim();
+  const same=normalize(a)===normalize(b);
+
+  const report=document.getElementById("textReport");
+
+  report.textContent=
+   "ОРИГИНАЛ:\n"+(a||"Текст не обнаружен")+
+   "\n\nРЕКЛАМНЫЙ КАДР:\n"+(b||"Текст не обнаружен")+
+   "\n\nРЕЗУЛЬТАТ:\n"+
+   (!a&&!b
+    ?"Текст не обнаружен на обоих изображениях."
+    :same
+     ?"Распознанные надписи совпадают."
+     :"Обнаружены различия в распознанном тексте.");
+
+  textResults.classList.remove("hidden");
+  status.textContent="Проверка текста завершена.";
+ }catch(e){
+  status.textContent=
+   "Не удалось запустить распознавание. Проверьте интернет и попробуйте снова.";
+ }finally{
+  checkText.disabled=false;
+ }
 };
 </script>
 </body>
