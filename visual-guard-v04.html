@@ -1,1 +1,205 @@
-Visual Guard 0.4
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visual Guard 0.4 — Color Check</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f7f7fb;color:#191625;font-family:Arial,sans-serif}
+main{max-width:760px;margin:auto;padding:25px 16px 70px}
+h1{font-size:30px}
+p{color:#686477;line-height:1.5}
+.card{background:white;border:1px solid #e5e1ef;border-radius:22px;padding:20px;margin:18px 0}
+label{display:block;font-weight:bold;margin-bottom:12px}
+input{width:100%;margin-bottom:12px}
+img{width:100%;height:230px;object-fit:contain;background:#eee;border-radius:14px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:15px}
+button{background:#7651dd;color:white;border:0;border-radius:13px;padding:15px 20px;font-size:16px;font-weight:bold}
+button:disabled{opacity:.5}
+.hidden{display:none}
+.swatch{width:100%;height:80px;border-radius:12px;border:1px solid #ddd}
+.result{background:#f2eeff;padding:18px;border-radius:14px;margin-top:15px}
+canvas{width:100%;border-radius:14px}
+.tag{color:#7651dd;font-weight:bold}
+@media(max-width:550px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main>
+<a href="/">← AI Creative Studio</a>
+<p class="tag">VISUAL GUARD · VERSION 0.4</p>
+<h1>Product Color Check</h1>
+<p>Экспериментальная проверка цвета товара на двух изображениях.</p>
+
+<div class="card">
+<div class="grid">
+<div>
+<label>1. Оригинал</label>
+<input id="file1" type="file" accept="image/png,image/jpeg,image/webp">
+<img id="img1" alt="Оригинал">
+</div>
+<div>
+<label>2. Рекламный кадр</label>
+<input id="file2" type="file" accept="image/png,image/jpeg,image/webp">
+<img id="img2" alt="Рекламный кадр">
+</div>
+</div>
+<p>Для точного теста используйте изображения одинакового размера и ракурса.</p>
+<button id="check" disabled>Проверить цвет</button>
+<p id="status" role="status">Загрузите две фотографии.</p>
+</div>
+
+<div id="report" class="card hidden">
+<h2>Отчёт о цвете</h2>
+<div class="grid">
+<div>
+<h3>Оригинал</h3>
+<div id="swatch1" class="swatch"></div>
+<p id="color1"></p>
+</div>
+<div>
+<h3>Рекламный кадр</h3>
+<div id="swatch2" class="swatch"></div>
+<p id="color2"></p>
+</div>
+</div>
+<div class="result">
+<h3 id="percent"></h3>
+<p id="explanation"></p>
+</div>
+<h3>Карта цветовых различий</h3>
+<canvas id="map"></canvas>
+<p>Красный цвет показывает пиксели с заметным изменением RGB. Это не оценка точности цвета конкретного товара.</p>
+<button id="save">Скачать карту</button>
+</div>
+</main>
+
+<script>
+const images=[null,null];
+const check=document.getElementById("check");
+const status=document.getElementById("status");
+const report=document.getElementById("report");
+
+function readImage(index,inputId,previewId){
+ const input=document.getElementById(inputId);
+ const preview=document.getElementById(previewId);
+ input.addEventListener("change",async()=>{
+  const file=input.files[0];
+  images[index]=null;
+  check.disabled=true;
+  report.classList.add("hidden");
+  if(!file)return;
+  if(!["image/jpeg","image/png","image/webp"].includes(file.type)){
+   status.textContent="Используйте JPEG, PNG или WebP.";
+   return;
+  }
+  const url=URL.createObjectURL(file);
+  const img=new Image();
+  img.src=url;
+  try{
+   await img.decode();
+   images[index]=img;
+   preview.src=url;
+   check.disabled=!(images[0]&&images[1]);
+   status.textContent=check.disabled?
+    "Загрузите вторую фотографию.":"Готово к проверке.";
+  }catch(e){
+   status.textContent="Не удалось открыть фотографию.";
+  }
+ });
+}
+
+readImage(0,"file1","img1");
+readImage(1,"file2","img2");
+
+function getPixels(image,w,h){
+ const c=document.createElement("canvas");
+ c.width=w;c.height=h;
+ const ctx=c.getContext("2d",{willReadFrequently:true});
+ ctx.fillStyle="#ffffff";
+ ctx.fillRect(0,0,w,h);
+ ctx.drawImage(image,0,0,w,h);
+ return ctx.getImageData(0,0,w,h).data;
+}
+
+function averageColor(data){
+ let r=0,g=0,b=0;
+ const count=data.length/4;
+ for(let i=0;i<data.length;i+=4){
+  r+=data[i];
+  g+=data[i+1];
+  b+=data[i+2];
+ }
+ return [Math.round(r/count),Math.round(g/count),Math.round(b/count)];
+}
+
+function rgbText(c){
+ return "RGB("+c.join(", ")+")";
+}
+
+check.onclick=()=>{
+ if(!images[0]||!images[1])return;
+ try{
+  const w=300;
+  const h=300;
+  const a=getPixels(images[0],w,h);
+  const b=getPixels(images[1],w,h);
+  const ca=averageColor(a);
+  const cb=averageColor(b);
+
+  document.getElementById("swatch1").style.backgroundColor=rgbText(ca);
+  document.getElementById("swatch2").style.backgroundColor=rgbText(cb);
+  document.getElementById("color1").textContent=rgbText(ca);
+  document.getElementById("color2").textContent=rgbText(cb);
+
+  const canvas=document.getElementById("map");
+  canvas.width=w;canvas.height=h;
+  const ctx=canvas.getContext("2d");
+  const output=ctx.createImageData(w,h);
+  let changed=0;
+
+  for(let i=0;i<a.length;i+=4){
+   const diff=(
+    Math.abs(a[i]-b[i])+
+    Math.abs(a[i+1]-b[i+1])+
+    Math.abs(a[i+2]-b[i+2])
+   )/3;
+
+   const different=diff>25;
+   if(different)changed++;
+
+   output.data[i]=different?230:235;
+   output.data[i+1]=different?50:235;
+   output.data[i+2]=different?80:235;
+   output.data[i+3]=255;
+  }
+
+  ctx.putImageData(output,0,0);
+
+  const pct=(changed/(w*h)*100).toFixed(1);
+  document.getElementById("percent").textContent=
+   pct+"% пикселей отличаются по цветовым значениям.";
+
+  document.getElementById("explanation").textContent=
+   "Средние цвета рассчитаны по всему изображению, включая фон. "+
+   "Изменение освещения, масштаба или ракурса также влияет на результат.";
+
+  report.classList.remove("hidden");
+  status.textContent="Проверка завершена.";
+ }catch(e){
+  status.textContent="Ошибка проверки: "+e.message;
+ }
+};
+
+document.getElementById("save").onclick=()=>{
+ const canvas=document.getElementById("map");
+ const link=document.createElement("a");
+ link.download="visual-guard-color-map.png";
+ link.href=canvas.toDataURL("image/png");
+ link.click();
+};
+</script>
+</body>
+</html>
